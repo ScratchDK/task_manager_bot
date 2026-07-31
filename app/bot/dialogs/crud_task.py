@@ -167,7 +167,7 @@ async def ask_for_assignee(message: types.Message, state: FSMContext):
     await state.set_state(CreateTaskStates.waiting_for_assignee_input)
     await message.answer(
         "👤 Введите username исполнителя (например, @ivan) или его ID (число).\n"
-        "Если хотите оставить задачу за собой — отправьте '-'.",
+        "Если хотите оставить задачу за собой - отправьте '-'.",
         reply_markup=ReplyKeyboardRemove()
     )
 

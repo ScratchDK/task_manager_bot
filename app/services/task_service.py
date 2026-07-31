@@ -14,7 +14,7 @@ async def create_task(db: AsyncSession, user: User, title: str, description: str
         priority=priority,
         category_id=category_id,
         created_by_id=user.id,
-        assignee_id=assignee_id or user.id,  # Если не указан, исполнитель — создатель
+        assignee_id=assignee_id or user.id,  # Если не указан, исполнитель - создатель
     )
     db.add(task)
     await db.commit()
