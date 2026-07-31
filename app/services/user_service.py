@@ -1,0 +1,49 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_
+from app.models.user import User
+
+async def get_or_create_user(db: AsyncSession, tg_data: dict) -> User:  # tg_data из handlers/start
+    """Найти или создать пользователя по данным из Telegram."""
+    chat_id = str(tg_data["chat_id"])
+
+    # Ищем пользователя
+    query = select(User).where(User.telegram_chat_id == chat_id)
+    result = await db.execute(query)
+    user = result.scalar_one_or_none()  # Достает объект из уже полученных данных
+
+    if user:
+        return user
+
+    # Создаем нового
+    user = User(
+        telegram_chat_id=chat_id,
+        username=tg_data.get("username"),
+        first_name=tg_data.get("first_name"),
+        last_name=tg_data.get("last_name"),
+    )
+    db.add(user)  # Аналог save() из django
+    await db.commit()  # Для атомарности, чтобы вся транзакция прошла
+    await db.refresh(user)  # refresh нужен для получения авто генерируемых полей, alchemy в отличие от django не делает автоматом
+    return user
+
+
+async def get_user_by_chat_id_or_username(db: AsyncSession, chat_id: str | int | None = None, username: str | None = None
+                                          ) -> User | None:
+    """Находит пользователя по telegram_chat_id или username."""
+
+    if not chat_id and not username:
+        return None
+
+    conditions = []
+    if chat_id:
+        # Преобразуем chat_id в строку, если это int, (была ошибка несоответствия типов данных)
+        chat_id_str = str(chat_id)
+        conditions.append(User.telegram_chat_id == chat_id_str)
+    if username:
+        # Убираем @ если есть
+        clean_username = username.lstrip('@')
+        conditions.append(User.username == clean_username)
+
+    query = select(User).where(or_(*conditions))  # Используем OR для поиска по любому из условий
+    result = await db.execute(query)
+    return result.scalar_one_or_none()

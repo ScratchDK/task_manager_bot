@@ -1,0 +1,11 @@
+from aiogram.fsm.state import State, StatesGroup
+
+
+class CreateTaskStates(StatesGroup):
+    waiting_for_title = State()
+    waiting_for_description = State()
+    waiting_for_due_date = State()
+    waiting_for_priority = State()
+    waiting_for_category = State()
+    waiting_for_assignee_input = State()
+    waiting_for_assignee_confirm = State()
