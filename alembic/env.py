@@ -6,11 +6,10 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
-
 # Импортируем твои модели и настройки
 from app.core.config import settings
 from app.core.database import Base
-from app.models import User, Task
+from app.models import Task, User
 
 # Это объект MetaData, который Alembic будет использовать для создания таблиц
 target_metadata = Base.metadata

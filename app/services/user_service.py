@@ -1,15 +1,17 @@
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession  # Тип для аннотации
+
 from app.models.user import User
+
 
 async def get_or_create_user(db: AsyncSession, tg_data: dict) -> User:  # tg_data из handlers/start
     """Найти или создать пользователя по данным из Telegram."""
     chat_id = str(tg_data["chat_id"])
 
     # Ищем пользователя
-    query = select(User).where(User.telegram_chat_id == chat_id)
-    result = await db.execute(query)
-    user = result.scalar_one_or_none()  # Достает объект из уже полученных данных
+    query = select(User).where(User.telegram_chat_id == chat_id)  # Ленивый запрос
+    result = await db.execute(query)  # Только тут обращаемся к БД
+    user = result.scalar_one_or_none()  # Извлекаем единственный объект User или None из результата
 
     if user:
         return user
@@ -21,9 +23,9 @@ async def get_or_create_user(db: AsyncSession, tg_data: dict) -> User:  # tg_dat
         first_name=tg_data.get("first_name"),
         last_name=tg_data.get("last_name"),
     )
-    db.add(user)  # Аналог save() из django
-    await db.commit()  # Для атомарности, чтобы вся транзакция прошла
-    await db.refresh(user)  # refresh нужен для получения авто генерируемых полей, alchemy в отличие от django не делает автоматом
+    db.add(user)  # Аналог save() из django, но INSERT еще не произошел
+    await db.commit()  # Для атомарности, чтобы вся транзакция прошла (INSERT в БД (генерируется id))
+    await db.refresh(user)  # refresh нужен для получения авто генерируемых полей, alchemy в отличие от django не делает автоматом (Загружаем свежие данные)
     return user
 
 
