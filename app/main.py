@@ -1,17 +1,17 @@
 import asyncio
-import redis.asyncio as redis
-
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+
+import redis.asyncio as redis
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
+from fastapi import FastAPI
 
-from app.bot.handlers import start, categories
-from app.bot.dialogs import crud_task
+from app.bot import menu
+from app.bot.dialogs import crud_cat, crud_task
+from app.bot.handlers import common, start
 from app.core.config import settings
-
 
 # Глобальные переменные для хранения клиента и хранилища (Для дальнейшего использования в других задачах)
 redis_client = None
@@ -32,10 +32,13 @@ async def lifespan(app: FastAPI):
     )
     dp = Dispatcher(storage=storage)
 
-    # 3. Подключаем хендлеры
+    # 3. Подключаем хендлеры, диалоги и т.д.
     dp.include_router(start.router)
-    dp.include_router(categories.router)
     dp.include_router(crud_task.router)
+    dp.include_router(crud_cat.router)
+    dp.include_router(menu.router)
+
+    dp.include_router(common.router)  # Универсальные обработчики (например: возврат в меню)
 
     # 4. Запускаем бота
     asyncio.create_task(dp.start_polling(bot))
