@@ -27,7 +27,7 @@ class MessageManager:
         return sent
 
     @staticmethod
-    async def clear_all(target: Message, state: FSMContext):
+    async def clear_all_and_state(target: Message, state: FSMContext):
         """Удаляет все сообщения, сохранённые в состоянии, и очищает список."""
         data = await state.get_data()
         messages = data.get("messages", [])
@@ -43,6 +43,7 @@ class MessageManager:
 
         # Очищаем список
         await state.update_data(messages=[])
+        await state.clear()
 
     # TODO: !!!ДОРАБОТАТЬ👇!!!
     @staticmethod
@@ -69,5 +70,5 @@ class MessageManager:
     @staticmethod
     async def delete_before_new_dialog(message: Message, state: FSMContext):
         await message.delete()  # Удаляем команду например /categories
-        await MessageManager.clear_all(message, state)  # Удаляем все старые сообщения из чата
+        await MessageManager.clear_all_and_state(message, state)  # Удаляем все старые сообщения из чата
         await state.clear()  # Очищаем состояние

@@ -1,8 +1,8 @@
 import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import Router, types
-from aiogram.filters import Command
+from aiogram import Router, types, F
+from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup,
                            ReplyKeyboardRemove)
@@ -10,98 +10,25 @@ from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup,
 from app.bot.dialogs.keyboards import (get_confirm_keyboard,
                                        get_due_date_keyboard,
                                        get_priority_keyboard,
-                                       get_return_keyboard)
+                                       get_return_keyboard,
+                                       get_copy_or_menu_keyboard,
+                                       get_assignee_keyboard)
 from app.bot.dispatcher import bot
 from app.bot.utils.message_manager import MessageManager
 from app.core.database import AsyncSessionLocal
 from app.services.category_service import get_user_cats
 from app.services.task_service import (create_task, delete_task,
-                                       get_task_by_id, get_user_tasks)
+                                       get_task_by_id, get_user_tasks, get_frequent_assignees)
 from app.services.user_service import get_user_by_chat_id_or_username
+from app.bot.utils.user_manager import get_user_or_ask_start
 
 from .states import CreateTaskStates
+from ...models.task import TaskStatusEnum
 
 router = Router()
 
 
-# --- Обработчики кнопок ---
-@router.callback_query(lambda c: c.data == "cancel_creation")
-async def cancel_creation(callback: types.CallbackQuery, state: FSMContext):
-    """Отменяет создание задачи и возвращает в главное меню."""
-    await callback.message.edit_text("❌ Создание задачи отменено.")  # TODO: Подредактировать
-    await asyncio.sleep(1)
-    await MessageManager.clear_all(callback.message, state)
-    await state.clear()
-    await callback.message.answer(
-        "👋 Возвращаюсь в главное меню.\n"
-        "Используйте команды:\n"
-        "/new_task - ➕ Создать задачу\n"
-        "/my_tasks - 📋 Мои задачи\n"
-        "/categories - 🏷️ Категории"
-    )
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data.startswith("complete_task_"))
-async def complete_task(callback: types.CallbackQuery):
-    """Отмечает задачу как выполненную."""
-    task_id = int(callback.data.split("_")[2])
-
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, callback.from_user.id)
-        if not user:
-            await callback.answer("❌ Пользователь не найден.", show_alert=True)
-            return
-
-        # Находим задачу
-        task = await get_task_by_id(db, task_id)
-        if not task:
-            await callback.answer("❌ Задача не найдена.", show_alert=True)
-            return
-
-        # Проверяем, что пользователь — создатель или исполнитель
-        if task.created_by_id != user.id and task.assignee_id != user.id:
-            await callback.answer("❌ Нет прав.", show_alert=True)
-            return
-
-        # Меняем статус
-        task.status = "completed"
-        await db.commit()
-
-        # Редактируем сообщение, убирая кнопки
-        await callback.message.edit_text(
-            callback.message.text + "\n\n✅ Задача выполнена!",
-            reply_markup=None
-        )
-        await callback.answer("✅ Задача выполнена!")
-
-
-@router.callback_query(lambda c: c.data.startswith("delete_task_"))
-async def delete_task_callback(callback: types.CallbackQuery):
-    """Удаляет задачу."""
-    task_id = int(callback.data.split("_")[2])
-
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, callback.from_user.id)
-        if not user:
-            await callback.answer("❌ Пользователь не найден.", show_alert=True)
-            return
-
-        # Удаляем задачу
-        success = await delete_task(db, task_id, user)
-
-        if success:
-            await callback.message.edit_text(
-                callback.message.text + "\n\n🗑️ Задача удалена.",
-                reply_markup=None
-            )
-            await callback.answer("🗑️ Задача удалена!")
-        else:
-            await callback.answer("❌ Не удалось удалить задачу.", show_alert=True)
-
-
 # --- Обработчики ---
-
 @router.message(Command("new_task"))
 async def start_create_task(message: types.Message, state: FSMContext):
     """Начинает процесс создания задачи."""
@@ -149,8 +76,8 @@ async def process_due_date(message: types.Message, state: FSMContext):
     today = datetime.now().date()
     due_date_str = None  # Храним как строку!
 
-    if message.text == "📅 Сегодня":
-        due_date_str = today.isoformat()
+    if message.text == "📅 Через час":
+        due_date_str = (datetime.now() + timedelta(hours=1)).isoformat()
     elif message.text == "📅 Завтра":
         due_date_str = (today + timedelta(days=1)).isoformat()
     elif message.text == "📅 Через 3 дня":
@@ -185,15 +112,16 @@ async def process_due_date(message: types.Message, state: FSMContext):
 @router.message(CreateTaskStates.waiting_for_priority)
 async def process_priority(message: types.Message, state: FSMContext):
     """Обрабатывает выбор приоритета."""
+    await MessageManager.add_message(state, message)  # Сообщение пользователя
+
     priority_map = {
         "🔴 Высокий": "high",
         "🟡 Средний": "medium",
         "🟢 Низкий": "low",
     }
     priority = priority_map.get(message.text)
-    if not priority and priority != "🏠 В главное меню":
+    if not priority and priority != "🏠 В главное меню":  # TODO: Проверить!
         await MessageManager.add_and_send(state, message,"⚠️ Пожалуйста, используйте кнопки для выбора ниже 👇")
-        await MessageManager.add_message(state, message)
         return
 
     await state.update_data(priority=priority)
@@ -236,18 +164,77 @@ async def process_category(message: types.Message, state: FSMContext):
 async def ask_for_assignee(message: types.Message, state: FSMContext):
     """Спрашивает пользователя, кому назначить задачу."""
     await state.set_state(CreateTaskStates.waiting_for_assignee_input)
-    await MessageManager.add_and_send(state, message,
-        "👤 Введите username исполнителя (например, @ivan) или его ID (число).\n"
-        "Если хотите оставить задачу за собой - отправьте '-'.",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    await MessageManager.add_message(state, message)
+
+    # Получаем частых исполнителей
+    async with AsyncSessionLocal() as db:
+        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+        frequent = await get_frequent_assignees(db, user.id)
+        if frequent:
+            keyboard = get_assignee_keyboard(frequent)
+        else:
+            keyboard = None
+
+    text = (f"👤 Введите username исполнителя (например, @ivan) или его ID (число).\n"
+            f"Если хотите оставить задачу за собой - отправьте '-'.")
+
+    extra = f"\nИли выберете из частых исполнителей ниже👇"
+
+    if keyboard:
+        # Отправляем с клавиатурой
+        sent = await MessageManager.add_and_send(state, message, text + extra, reply_markup=keyboard)
+    else:
+        # Без клавиатуры (только текст)
+        sent = await MessageManager.add_and_send(state, message, text)
+    await MessageManager.add_message(state, sent)
+
+
+# TODO: Пока не понятно почему не работает так как описано в инструкции, потом разобраться!
+#@router.message(StateFilter(CreateTaskStates.waiting_for_assignee_input), F.contact)
+# StateFilter для комбинации с другими фильтрами, по типу F
+# F.contact срабатывает только на сообщения которые содержат выбранный контакт
+# async def process_assignee_contact(message: types.Message, state: FSMContext):
+#     """Обрабатывает выбор исполнителя из контактов."""
+#     contact = message.contact
+#     assignee_id = contact.user_id  # ← ID выбранного пользователя
+#
+#     if not assignee_id:
+#         await message.answer("❌ Не удалось получить ID контакта. Попробуйте ещё раз.")
+#         return
+#
+#     # Проверяем, что пользователь с таким ID существует в нашей БД
+#     async with AsyncSessionLocal() as db:
+#         user = await get_user_by_chat_id_or_username(db, chat_id=assignee_id)
+#         if not user:
+#             await MessageManager.add_and_send(
+#                 state, message,
+#                 "⚠️ Пользователь не найден в базе данных. Возможно, он ещё не запускал бота.\n"
+#                 "Попросите его нажать /start, чтобы зарегистрироваться."
+#             )
+#             return
+#
+#         # ✅ Пользователь найден! Сохраняем его ID в состояние
+#         await state.update_data(assignee_id=user.id)
+#         # Можно также сохранить кандидата для подтверждения
+#         await state.update_data(
+#             assignee_candidate_id=user.id,
+#             assignee_candidate_name=user.username or user.first_name or str(user.telegram_chat_id)
+#         )
+#
+#     # Отправляем подтверждение, как при обычном вводе
+#     await state.set_state(CreateTaskStates.waiting_for_assignee_confirm)
+#     await message.answer(
+#         f"👤 Найден пользователь: {user.username or user.first_name} (ID: {user.telegram_chat_id})\n"
+#         "Назначить его исполнителем?",
+#         reply_markup=get_confirm_keyboard(user.id)
+#     )
 
 
 @router.message(CreateTaskStates.waiting_for_assignee_input)
 async def process_assignee_input(message: types.Message, state: FSMContext):
     """Обрабатывает ввод исполнителя."""
     text = message.text.strip()
+
+    await MessageManager.add_message(state, message)
 
     if text == "-":
         # Пропуск — назначаем на себя
@@ -286,32 +273,6 @@ async def process_assignee_input(message: types.Message, state: FSMContext):
         await MessageManager.add_message(state, message)
 
 
-@router.callback_query(CreateTaskStates.waiting_for_assignee_confirm)
-async def process_assignee_confirm(callback: types.CallbackQuery, state: FSMContext):
-    """Обрабатывает подтверждение или отмену назначения."""
-    if callback.data == "assign_cancel":
-        await callback.message.edit_text("❌ Назначение отменено.")
-        await callback.message.answer("Введите другого исполнителя или '-' для пропуска.")
-        await state.set_state(CreateTaskStates.waiting_for_assignee_input)
-        await callback.answer()
-        return
-
-    if callback.data.startswith("assign_confirm_"):
-        assignee_id = int(callback.data.split("_")[2])
-        data = await state.get_data()
-
-        if data.get("assignee_candidate_id") == assignee_id:
-            await state.update_data(assignee_id=assignee_id)
-            await callback.message.edit_text("✅ Исполнитель назначен!")
-            await finalize_task_creation(callback.message, state)
-        else:
-            await callback.message.edit_text("⚠️ Ошибка: выбранный пользователь не совпадает. Попробуйте снова.")
-            await state.set_state(CreateTaskStates.waiting_for_assignee_input)
-
-        await callback.answer()
-        return
-
-
 # --- Функция финализации создания задачи ---
 async def finalize_task_creation(message: types.Message, state: FSMContext):
     """Создает задачу и завершает диалог."""
@@ -320,8 +281,7 @@ async def finalize_task_creation(message: types.Message, state: FSMContext):
     async with AsyncSessionLocal() as db:
         user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
         if not user:
-            await message.answer("❌ Пользователь не найден. Используйте /start")
-            await state.clear()
+            await MessageManager.add_and_send(state, message,"❌ Пользователь не найден. Используйте /start")
             return
 
         # Преобразуем дату из date в datetime (если она есть)
@@ -341,43 +301,60 @@ async def finalize_task_creation(message: types.Message, state: FSMContext):
             assignee_id=data.get("assignee_id"),
         )
 
-    # Формируем ответ
-    priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(task.priority, "🟡")
-    due_date_str = task.due_date.strftime("%d.%m.%Y") if task.due_date else "не установлена"
+        # Формируем ответ
+        priority_value = task.priority.value
+        priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority_value, "🟡")
+        due_date_str = task.due_date.strftime("%d.%m.%Y") if task.due_date else "не установлена"
 
-    assignee_display = "Вы (создатель)"
+        assignee_display = "Вы (создатель)"
 
-    if task.assignee_id and task.assignee_id != task.created_by_id:
-        assignee_display = task.assignee.username or task.assignee.first_name or str(task.assignee.telegram_chat_id)
-
-        try:
-            await bot.send_message(
-                chat_id=task.assignee.telegram_chat_id,
-                text=(
-                    f"📩 Вам назначена задача!\n\n"
-                    f"📝 {task.title}\n"
-                    f"📄 {task.description or 'Без описания'}\n"
-                    f"🚨 Приоритет: {task.priority}\n"
-                    f"📅 Срок: {task.due_date.strftime('%d.%m.%Y') if task.due_date else 'не установлен'}"
+        if task.assignee_id != task.created_by_id:
+            if not task.assignee.is_active:
+                await state.update_data(task_id=task.id)
+                await state.set_state(CreateTaskStates.waiting_for_copy_message)
+                await MessageManager.add_and_send(
+                    state,
+                    message,
+                    f"👤 Данный пользователь: {task.assignee.username} (ID: {task.assignee.telegram_chat_id}),\n"
+                    "не активировал свою учетную запись в task manager bot.\n"
+                    "Вы может оправить ему уведомление, сформировать и скопировать его по кнопке ниже👇 или вернуться в меню",
+                    reply_markup=get_copy_or_menu_keyboard()
                 )
-            )
-        except Exception as e:
-            print(f"❌ Не удалось отправить уведомление исполнителю {task.assignee.telegram_chat_id}: {e}")
+                return
 
-            await message.answer(
-                f"ℹ️ Задача создана, но не удалось уведомить исполнителя.\n"
-                f"Возможно, пользователь ещё не начал диалог с ботом.",
-                reply_markup=ReplyKeyboardRemove()
-            )
-            # TODO: Важно!!! Данный шаг доработать в первую очередь
+            # await db.refresh(task, attribute_names=['assignee'])  # Обновляем модель и подгружаем связанную
+            # перенес логику в create_task чтобы не повторять код в дальнейшем
+            assignee_display = task.assignee.username or task.assignee.first_name or str(task.assignee.telegram_chat_id)
 
-    await MessageManager.clear_all(message, state)
+            try:
+                await bot.send_message(
+                    chat_id=task.assignee.telegram_chat_id,
+                    text=(
+                        f"📩 Вам назначена задача!\n\n"
+                        f"📝 {task.title}\n"
+                        f"📄 {task.description or 'Без описания'}\n"
+                        f"🚨 Приоритет: {task.priority}\n"
+                        f"📅 Срок: {task.due_date.strftime('%d.%m.%Y')}\n"
+                        f"👤 Назначил задачу: {task.created_by.username or task.created_by.telegram_chat_id}"
+                    )
+                )
+            except Exception as e:
+                print(f"❌ Не удалось отправить уведомление исполнителю {task.assignee.telegram_chat_id}: {e}")
+
+                await message.answer(
+                    f"ℹ️ Задача создана, но не удалось уведомить исполнителя.\n"
+                    f"Возможно, пользователь ещё не начал диалог с ботом.",
+                    reply_markup=ReplyKeyboardRemove()
+                )
+                # TODO: Важно!!! Данный шаг доработать в первую очередь
+
+    await MessageManager.clear_all_and_state(message, state)
 
     await MessageManager.add_and_send(state, message,
         f"✅ Задача создана!\n\n"
         f"📝 {task.title}\n"
         f"📄 {task.description or 'Без описания'}\n"
-        f"🚨 Приоритет: {priority_emoji} {task.priority}\n"
+        f"🚨 Приоритет: {priority_emoji} {priority_value}\n"
         f"📅 Срок: {due_date_str}\n"
         f"👤 Исполнитель: {assignee_display}\n"
         f"🆔 ID: {task.id}",
@@ -391,7 +368,9 @@ async def finalize_task_creation(message: types.Message, state: FSMContext):
 async def delete_task_command(message: types.Message, state: FSMContext):
     """Удаляет задачу по ID."""
     # TODO: Потом доработать чтобы было более интуитивно
+    await message.delete()
     await state.clear()
+
     args = message.text.split()
     if len(args) != 2:
         await message.answer("❌ Использование: /delete_task <ID задачи>")
@@ -427,13 +406,12 @@ async def list_tasks(message: types.Message, state: FSMContext):
 
     await MessageManager.add_message(state, message)  # Сохраняем команду пользователя
 
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            sent = await message.answer("❌ Пользователь не найден. Используйте /start")
-            await MessageManager.add_message(state, sent)
-            return
+    user = await get_user_or_ask_start(message, state)
+    if not user:
+        await state.clear()
+        return
 
+    async with AsyncSessionLocal() as db:
         tasks = await get_user_tasks(db, user)
 
     if not tasks:
@@ -459,7 +437,7 @@ async def list_tasks(message: types.Message, state: FSMContext):
 
     for task in tasks:
         priority_value = task.priority.value if hasattr(task.priority, 'value') else task.priority
-        status_value = task.status
+        status_value = task.status.value if hasattr(task.status, 'value') else task.status  # TODO: !?
         due_date_str = task.due_date.strftime("%d.%m.%Y") if task.due_date else "—"
 
         text = (
@@ -477,7 +455,7 @@ async def list_tasks(message: types.Message, state: FSMContext):
         # Создаём кнопки
         buttons = []
 
-        if task.status != "completed":
+        if task.status != TaskStatusEnum.completed:
             buttons.append(
                 InlineKeyboardButton(
                     text="✅ Выполнить",

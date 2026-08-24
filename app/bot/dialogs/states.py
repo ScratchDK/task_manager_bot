@@ -9,6 +9,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_category = State()
     waiting_for_assignee_input = State()
     waiting_for_assignee_confirm = State()
+    waiting_for_copy_message = State()  # Исполнитель не активен, копируем сообщение для оправки через владельца задачи
 
 
 class CategoryStates(StatesGroup):

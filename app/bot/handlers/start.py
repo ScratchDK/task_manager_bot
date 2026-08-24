@@ -12,7 +12,7 @@ router = Router()
 async def cmd_start(message: types.Message, state: FSMContext):
     # Сбрасываем состояние, если оно было
     await message.delete()  # Удаляем команду /start
-    await MessageManager.clear_all(message, state)  # Удаляем все старые сообщения из чата
+    await MessageManager.clear_all_and_state(message, state)  # Удаляем все старые сообщения из чата
     await state.clear()  # Очищаем состояние
 
     # Получаем данные пользователя из Telegram

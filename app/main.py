@@ -1,5 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
+from app.core.celery import celery_app
 
 import redis.asyncio as redis
 from aiogram import Bot, Dispatcher
@@ -9,8 +10,8 @@ from aiogram.fsm.storage.redis import RedisStorage
 from fastapi import FastAPI
 
 from app.bot import menu
-from app.bot.dialogs import crud_cat, crud_task
-from app.bot.handlers import common, start
+from app.bot.dialogs import crud_cat, crud_task, callbacks
+from app.bot.handlers import start
 from app.core.config import settings
 
 # Глобальные переменные для хранения клиента и хранилища (Для дальнейшего использования в других задачах)
@@ -36,9 +37,10 @@ async def lifespan(app: FastAPI):
     dp.include_router(start.router)
     dp.include_router(crud_task.router)
     dp.include_router(crud_cat.router)
-    dp.include_router(menu.router)
 
-    dp.include_router(common.router)  # Универсальные обработчики (например: возврат в меню)
+    dp.include_router(callbacks.router)  # TODO: Могут быть конфликты? 👇
+
+    dp.include_router(menu.router)  # TODO: Могут быть конфликты? 👆
 
     # 4. Запускаем бота
     asyncio.create_task(dp.start_polling(bot))

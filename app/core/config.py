@@ -24,10 +24,20 @@ class Settings(BaseSettings):
     # Telegram
     BOT_TOKEN: SecretStr = SecretStr("your-telegram-bot-token")
 
+    # Celery
+    CELERY_BROKER_URL: str = "redis://redis:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://redis:6379/0"
+    CELERY_ACCEPT_CONTENT: list = ["json"]
+    CELERY_TASK_SERIALIZER: str = "json"
+    CELERY_RESULT_SERIALIZER: str = "json"
+    CELERY_TIMEZONE: str = "UTC"
+    CELERY_ENABLE_UTC: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        case_sensitive=True
+        case_sensitive=True,  # Переменные в .env должны точно совпадать
+        extra="ignore"  # Pydantic игнорирует все переменные из .env, которых нет в классе Settings
     )
 
     @property
