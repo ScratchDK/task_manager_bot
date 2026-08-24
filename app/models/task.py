@@ -3,7 +3,7 @@ from datetime import datetime
 
 from sqlalchemy import Column, DateTime
 from sqlalchemy import Enum as SQLEnum
-from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy import ForeignKey, Integer, String, Text, Boolean
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -14,15 +14,26 @@ class PriorityEnum(enum.Enum):
     medium = "medium"
     low = "low"
 
+
+class TaskStatusEnum(enum.Enum):
+    pending = "pending"
+    in_progress = "in_progress"
+    completed = "completed"
+    cancelled = "cancelled"
+
+
 class Task(Base):
     __tablename__ = "tasks"
 
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    due_date = Column(DateTime, nullable=True)
+    due_date = Column(DateTime, nullable=True)  # Срок выполнения
     priority = Column(SQLEnum(PriorityEnum), default=PriorityEnum.medium)
-    status = Column(String, default="pending")  # pending, in_progress, completed, cancelled
+    status = Column(SQLEnum(TaskStatusEnum), default=TaskStatusEnum.pending)
+
+    # Флаг, что задача отменена из-за не активности исполнителя
+    cancelled_by_inactivity = Column(Boolean, default=False)
 
     # Связь с категорией (опционально)
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
@@ -37,5 +48,5 @@ class Task(Base):
     # Связи
     category = relationship("Category", back_populates="tasks")
 
-    created_by = relationship("User", foreign_keys=[created_by_id], back_populates="created_tasks")
-    assignee = relationship("User", foreign_keys=[assignee_id], back_populates="assigned_tasks")
+    created_by = relationship("User", foreign_keys=[created_by_id], back_populates="created_tasks")  # Создал задачу
+    assignee = relationship("User", foreign_keys=[assignee_id], back_populates="assigned_tasks")  # Исполнитель

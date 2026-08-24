@@ -1,18 +1,18 @@
 """Initial migration
 
-Revision ID: 19e99c269a2c
+Revision ID: 976855c0d052
 Revises: 
-Create Date: 2026-07-24 05:58:35.450020
+Create Date: 2026-08-18 05:22:59.102615
 
 """
 from typing import Sequence, Union
 
+from alembic import op
 import sqlalchemy as sa
 
-from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = '19e99c269a2c'
+revision: str = '976855c0d052'
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -47,11 +47,13 @@ def upgrade() -> None:
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('due_date', sa.DateTime(), nullable=True),
     sa.Column('priority', sa.Enum('high', 'medium', 'low', name='priorityenum'), nullable=True),
-    sa.Column('status', sa.String(), nullable=True),
+    sa.Column('status', sa.Enum('pending', 'in_progress', 'completed', 'cancelled', name='taskstatusenum'), nullable=True),
     sa.Column('category_id', sa.Integer(), nullable=True),
+    sa.Column('assignee_id', sa.Integer(), nullable=True),
     sa.Column('created_by_id', sa.Integer(), nullable=False),
     sa.Column('created_at', sa.DateTime(), nullable=True),
     sa.Column('updated_at', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['assignee_id'], ['users.id'], ),
     sa.ForeignKeyConstraint(['category_id'], ['categories.id'], ),
     sa.ForeignKeyConstraint(['created_by_id'], ['users.id'], ),
     sa.PrimaryKeyConstraint('id')

@@ -49,3 +49,9 @@ async def get_user_by_chat_id_or_username(db: AsyncSession, chat_id: str | int |
     query = select(User).where(or_(*conditions))  # Используем OR для поиска по любому из условий
     result = await db.execute(query)
     return result.scalar_one_or_none()
+
+
+async def is_user_active(db: AsyncSession, user_id: int) -> bool:
+    """Проверяет, активен ли пользователь (запускал ли бота)."""
+    user = await db.get(User, user_id)
+    return user is not None and user.is_active
