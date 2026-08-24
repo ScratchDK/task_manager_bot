@@ -2,9 +2,39 @@ from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.task import Task
 from app.models.user import User
+
+from sqlalchemy import func, desc
+
+
+async def get_frequent_assignees(db: AsyncSession, user_id: int, limit: int = 3) -> list[User]:
+    """Возвращает список пользователей, которых данный пользователь чаще всего назначал исполнителями."""
+    # Подзапрос: считаем количество назначений для каждого assignee
+    subquery = (
+        select(
+            Task.assignee_id,
+            func.count(Task.id).label("count")  # Виртуальное поле с результатом
+        )
+        .where(
+            Task.created_by_id == user_id,
+            Task.assignee_id != user_id  # Исключаем самого себя
+        )
+        .group_by(Task.assignee_id)
+        .subquery()  # Чтобы была возможность использовать в JOIN или FROM другого запроса
+    )
+
+    # Основной запрос: получаем пользователей с сортировкой по частоте
+    query = (
+        select(User)
+        .join(subquery, User.id == subquery.c.assignee_id)
+        .order_by(desc(subquery.c.count))  # .c. "columns" выбрать определенную колонку
+        .limit(limit)
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
 
 
 async def create_task(db: AsyncSession, user: User, title: str, description: str = None,
@@ -21,7 +51,18 @@ async def create_task(db: AsyncSession, user: User, title: str, description: str
     )
     db.add(task)
     await db.commit()
-    await db.refresh(task)
+
+    # Для моментов когда нужен исполнитель
+    if assignee_id and assignee_id != user.id:
+        result = await db.execute(
+            select(Task)
+            .options(selectinload(Task.assignee))  # selectinload - жадно подгружаем связанные данные
+            .where(Task.id == task.id)
+        )
+        task = result.scalar_one()
+    else:
+        await db.refresh(task)
+
     return task
 
 

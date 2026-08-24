@@ -47,20 +47,34 @@ services:
       - DB_HOST=db
       - REDIS_URL=redis://redis:6379/0
 
-  celery:
+  celery_worker:
     build: .
-    command: celery -A app.tasks worker --pool=solo -l INFO
+    command: celery -A app.core.celery worker --pool=solo -l INFO
+    #command: celery -A app.core.celery worker -P asyncio -l INFO
+    #Проблема выше с использованием event loop (SQlAlchemy путает loop с Celery)
+    #Пока вся логика в Celery синхронная, потом возможно переделать!
     volumes:
       - .:/app
     depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - redis
+      - db
     env_file:
       - .env
     environment:
+      - REDIS_URL=redis://redis:6379/0
       - DB_HOST=db
+
+  celery_beat:
+    build: .
+    command: celery -A app.core.celery beat -l INFO
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - celery_worker
+    env_file:
+      - .env
+    environment:
       - REDIS_URL=redis://redis:6379/0
 
 volumes:
