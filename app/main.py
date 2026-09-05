@@ -24,26 +24,29 @@ async def lifespan(app: FastAPI):
     global redis_client, storage
     # 1. Подключаемся к Redis
     redis_client = redis.from_url("redis://redis:6379/0")
-    storage = RedisStorage(redis=redis_client)
+    storage = RedisStorage(redis=redis_client)  # state: FSMContext обертка над хранилищем REDIS
 
     # 2. Создаём бота и диспетчер СРАЗУ с нужным хранилищем
     bot = Bot(
         token=settings.BOT_TOKEN.get_secret_value(),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
-    dp = Dispatcher(storage=storage)
+    dp = Dispatcher(storage=storage)  # Основной мозг бота, хранятся данные диалога
 
     # 3. Подключаем хендлеры, диалоги и т.д.
+    # Важен порядок обработчиков!!!
     dp.include_router(start.router)
     dp.include_router(crud_task.router)
     dp.include_router(crud_cat.router)
 
     dp.include_router(callbacks.router)  # TODO: Могут быть конфликты? 👇
 
-    dp.include_router(menu.router)  # TODO: Могут быть конфликты? 👆
+    dp.include_router(menu.router)       # TODO: Могут быть конфликты? 👆
 
     # 4. Запускаем бота
     asyncio.create_task(dp.start_polling(bot))
+    # dp.start_polling(bot) - асинхронная корутина запускающая бесконечный цикл
+    # asyncio.create_task() - добавляет корутину в event loop
 
     # 5. Отдаем управление FastAPI
     yield

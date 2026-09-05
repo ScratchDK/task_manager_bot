@@ -20,6 +20,8 @@ class TaskStatusEnum(enum.Enum):
     in_progress = "in_progress"
     completed = "completed"
     cancelled = "cancelled"
+    archived = "archived"
+    review = "review"
 
 
 class Task(Base):
@@ -50,3 +52,10 @@ class Task(Base):
 
     created_by = relationship("User", foreign_keys=[created_by_id], back_populates="created_tasks")  # Создал задачу
     assignee = relationship("User", foreign_keys=[assignee_id], back_populates="assigned_tasks")  # Исполнитель
+
+    # --- Поля связанные с проверкой выполнения задачи ---
+    # Дата отправки на проверку (для отслеживания)
+    review_requested_at = Column(DateTime, nullable=True)
+
+    # Дата выполнения задачи
+    completed_at = Column(DateTime, nullable=True)
