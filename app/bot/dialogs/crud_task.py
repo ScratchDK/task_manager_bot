@@ -33,9 +33,7 @@ router = Router()
 async def start_create_task(message: types.Message, state: FSMContext):
     """Начинает процесс создания задачи."""
     await state.set_state(CreateTaskStates.waiting_for_title)  # Устанавливаем состояние, для понимания на каком этапе диалог
-    await MessageManager.add_and_send(
-        state,
-        message,
+    await MessageManager.add_and_send(state, message,
         "📝 Введите заголовок задачи:",
         reply_markup=get_return_keyboard())  # Отправляем и сохраняем сообщение
     await MessageManager.add_message(state, message)  # Сохраняем сообщение пользователя

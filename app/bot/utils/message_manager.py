@@ -51,11 +51,13 @@ class MessageManager:
         """
         Отправляет сообщение и удаляет его через указанное время.
         Сообщение НЕ сохраняется в состоянии (для временных уведомлений по типу: возвращаюсь в меню).
+        Также как замена callback.answer(), если нужно подержать уведомление на подольше чтобы пользователь успел прочесть.
         """
         sent = await target.answer(text, **kwargs)
 
         # Запускаем таймер на удаление
-        asyncio.create_task(MessageManager._delete_after_delay(sent, delay))
+        # noinspection PyAsyncCall
+        asyncio.create_task(MessageManager._delete_after_delay(sent, delay))  # Добавляем задачу в текущий event loop
         return sent
 
     @staticmethod

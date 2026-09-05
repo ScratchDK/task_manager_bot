@@ -55,8 +55,12 @@ async def help_command(message: types.Message, state: FSMContext):
     await MessageManager.add_and_send(state, message, help_text, reply_markup=get_return_keyboard())
 
 
-async def show_main_menu(message: types.Message, state: FSMContext):
+async def show_main_menu(message: types.Message, state: FSMContext = None):
     """Показывает главное меню и сохраняет его ID."""
+    # Очищаем состояние, если оно передано
+    if state:
+        await state.clear()
+
     sent = await message.answer(main_menu_message)
     if state:
         await MessageManager.add_message(state, sent)
