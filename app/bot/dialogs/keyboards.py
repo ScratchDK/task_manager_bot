@@ -30,6 +30,19 @@ def get_return_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[add_return_button()])
 
 
+def get_confirm_task_keyboard(task_id: int):
+    buttons = [
+        InlineKeyboardButton(
+            text="✅ Утвердить",
+            callback_data=f"approve_task_{task_id}"
+        ),
+        InlineKeyboardButton(
+            text="🔄 На доработку",
+            callback_data=f"rework_task_{task_id}"
+        )
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
+
 def get_priority_keyboard():
     """Клавиатура для выбора приоритета."""
     buttons = [

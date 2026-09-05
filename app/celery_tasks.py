@@ -169,3 +169,17 @@ def check_upcoming_deadlines():
             )
 
         logger.info(f"Уведомления о скором дедлайне отправлены для {len(tasks)} задач")
+
+# TODO: На будущее для очистки старых задач и отдельного отображения архивных
+@shared_task
+def archive_old_tasks():
+    """Архивирует задачи, завершённые более 30 дней назад."""
+    with SyncSessionLocal() as db:
+        thirty_days_ago = datetime.now() - timedelta(days=30)
+        old_tasks = db.query(Task).filter(
+            Task.completed_at < thirty_days_ago
+        ).all()
+
+        for task in old_tasks:
+            task.status = TaskStatusEnum.archived
+            db.commit()

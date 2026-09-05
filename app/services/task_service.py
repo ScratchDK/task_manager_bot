@@ -13,25 +13,26 @@ from sqlalchemy import func, desc
 async def get_frequent_assignees(db: AsyncSession, user_id: int, limit: int = 3) -> list[User]:
     """Возвращает список пользователей, которых данный пользователь чаще всего назначал исполнителями."""
     # Подзапрос: считаем количество назначений для каждого assignee
+    # TODO: Рассмотреть вариант без подзапроса
     subquery = (
-        select(
+        select(                                 # Список assignee_id и количество задач для каждого
             Task.assignee_id,
             func.count(Task.id).label("count")  # Виртуальное поле с результатом
         )
         .where(
             Task.created_by_id == user_id,
-            Task.assignee_id != user_id  # Исключаем самого себя
+            Task.assignee_id != user_id         # Исключаем самого себя
         )
         .group_by(Task.assignee_id)
-        .subquery()  # Чтобы была возможность использовать в JOIN или FROM другого запроса
+        .subquery()                             # Чтобы была возможность использовать в JOIN или FROM другого запроса
     )
 
     # Основной запрос: получаем пользователей с сортировкой по частоте
     query = (
         select(User)
         .join(subquery, User.id == subquery.c.assignee_id)
-        .order_by(desc(subquery.c.count))  # .c. "columns" выбрать определенную колонку
-        .limit(limit)
+        .order_by(desc(subquery.c.count))       # .c. "columns" выбрать определенную колонку
+        .limit(limit)                           # Ограничиваем количество результатов
     )
     result = await db.execute(query)
     return result.scalars().all()

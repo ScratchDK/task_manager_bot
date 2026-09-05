@@ -12,6 +12,10 @@ class CreateTaskStates(StatesGroup):
     waiting_for_copy_message = State()  # Исполнитель не активен, копируем сообщение для оправки через владельца задачи
 
 
+class ReworkStates(StatesGroup):
+    waiting_for_comment = State()
+
+
 class CategoryStates(StatesGroup):
     waiting_for_name = State()  # Создание
     waiting_for_edit_id = State()  # Редактирование — запрос ID

@@ -1,17 +1,17 @@
+import asyncio
 from datetime import datetime
 
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
 
 from app.bot.dispatcher import bot
-from app.bot.menu import show_main_menu
 from app.bot.utils.message_manager import MessageManager
 from app.core.database import AsyncSessionLocal
 from app.models import User
 from app.models.task import TaskStatusEnum
 from app.services.task_service import get_task_by_id, delete_task
 from app.services.user_service import get_user_by_chat_id_or_username
-from app.bot.dialogs.states import CreateTaskStates, ReworkStates
+from app.bot.dialogs.states import CreateTaskStates
 from app.bot.dialogs.crud_task import finalize_task_creation
 from app.bot.dialogs.keyboards import get_copy_actions_keyboard, get_confirm_keyboard, get_confirm_task_keyboard
 
@@ -22,14 +22,16 @@ router = Router()
 @router.callback_query(lambda c: c.data == "cancel_creation")
 async def cancel_creation(callback: types.CallbackQuery, state: FSMContext):
     """Отменяет создание задачи и возвращает в главное меню."""
+    await callback.message.edit_text("❌ Создание задачи отменено.")  # TODO: Подредактировать
+    await asyncio.sleep(1)
     await MessageManager.clear_all_and_state(callback.message, state)
-    await MessageManager.send_and_delete(
-        callback.message,
-        "❌ Создание задачи отменено. Возвращаюсь в меню...",
-        delay=2
+    await callback.message.answer(
+        "👋 Возвращаюсь в главное меню.\n"
+        "Используйте команды:\n"
+        "/new_task - ➕ Создать задачу\n"
+        "/my_tasks - 📋 Мои задачи\n"
+        "/categories - 🏷️ Категории"
     )
-    # Показываем меню новым сообщением
-    await show_main_menu(callback.message, state)
     await callback.answer()
 
 
@@ -47,13 +49,13 @@ async def complete_task(callback: types.CallbackQuery, state: FSMContext):
         # Находим задачу
         task = await get_task_by_id(db, task_id)
 
-        if not task:
-            await callback.answer("❌ Задача не найдена.", show_alert=True)
-            return
-
         # Проверяем, что задача не на проверке и не выполнена
         if task.status in [TaskStatusEnum.review, TaskStatusEnum.completed]:
             await callback.answer("❌ Задача уже на проверке или выполнена.", show_alert=True)
+            return
+
+        if not task:
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
 
         # Проверяем, что пользователь — создатель или исполнитель
@@ -67,37 +69,38 @@ async def complete_task(callback: types.CallbackQuery, state: FSMContext):
             task.status = TaskStatusEnum.completed
             task.completed_at = datetime.now()
             await db.commit()
-            # Редактируем изначальное сообщение кнопки выполнить в списке задач
-            await callback.message.edit_text(callback.message.text + "\n\n✅ Задача выполнена!", reply_markup=None)
-            # TODO: Проверить 👇
+            await callback.message.edit_text(
+                callback.message.text + "\n\n✅ Задача выполнена!",
+                reply_markup=None
+            )
             await callback.answer("✅ Задача выполнена!")
 
         elif task.assignee_id == user.id:
-            # Исполнитель выполнил задачу, отправляем на проверку
+            # Создатель выполнил задачу, отправляем на проверку
             task.status = TaskStatusEnum.review
             task.review_requested_at = datetime.now()
             await db.commit()
-
             await callback.message.edit_text(
                 callback.message.text + "\n\n📤 Задача отправлена на проверку.",
                 reply_markup=None
             )
 
-            # Уведомляем создателя с кнопками
-            creator = await db.get(User, task.created_by_id)
-            if creator:
-                await bot.send_message(
-                    chat_id=creator.telegram_chat_id,
-                    text=(
-                        f"📩 Исполнитель {user.username} отправил задачу на проверку:\n\n"
-                        f"📝 {task.title}\n"
-                        f"📄 {task.description or 'Без описания'}\n\n"
-                        f"Примите решение:"
-                    ),
-                    reply_markup=get_confirm_task_keyboard(task.id)
-                )
-            await MessageManager.send_and_delete(callback.message, "📤 Задача отправлена на проверку!", delay=3)
-            await callback.answer()
+        # Уведомляем создателя с кнопками
+        creator = await db.get(User, task.created_by_id)
+        if creator:
+            await bot.send_message(
+                chat_id=creator.telegram_chat_id,
+                text=(
+                    f"📩 Исполнитель {user.username} отправил задачу на проверку:\n\n"
+                    f"📝 {task.title}\n"
+                    f"📄 {task.description or 'Без описания'}\n\n"
+                    f"Примите решение:"
+                ),
+                reply_markup=get_confirm_task_keyboard(task.id)
+            )
+
+        await callback.answer("📤 Задача отправлена на проверку!")
+        return
 
 
 # --- Новая логика подтверждения выполнения задач ---
@@ -129,54 +132,26 @@ async def approve_task(callback: types.CallbackQuery, state: FSMContext):
                 text=f"✅ Задача '{task.title}' утверждена и закрыта!"
             )
 
-        await MessageManager.send_and_delete(
-            callback.message,
-            "✅ Задача утверждена и закрыта!",
-            delay=3
+        await callback.message.edit_text(
+            callback.message.text + "\n\n✅ Задача утверждена и закрыта.",
+            reply_markup=None
         )
-        await show_main_menu(callback.message, state)
-        await callback.answer()
+        await callback.answer("✅ Задача утверждена!")
 
 
 @router.callback_query(lambda c: c.data.startswith("rework_task_"))
 async def rework_task(callback: types.CallbackQuery, state: FSMContext):
-    """Запрашивает комментарий для доработки."""
     task_id = int(callback.data.split("_")[2])
-
-    # Сохраняем ID задачи в состояние
-    await state.update_data(rework_task_id=task_id)
-
-    # Переключаем состояние
-    await state.set_state(ReworkStates.waiting_for_comment)
-
-    # Редактируем сообщение, чтобы убрать кнопки
-    await callback.message.edit_text(callback.message.text + "\n\n📝 Напишите причину доработки:", reply_markup=None)
-    await callback.answer()
-
-
-@router.message(ReworkStates.waiting_for_comment)
-async def process_rework_comment(message: types.Message, state: FSMContext):
-    """Принимает комментарий и отправляет задачу на доработку."""
-    comment = message.text.strip()
-
-    if not comment:
-        await message.answer("❌ Комментарий не может быть пустым. Напишите причину доработки:")
-        return
-
-    # Получаем ID задачи из состояния
-    data = await state.get_data()
-    task_id = data.get("rework_task_id")
-
-    if not task_id:
-        await message.answer("❌ Ошибка: задача не найдена. Возвращаюсь в меню.")
-        await show_main_menu(message, state)
-        return
 
     async with AsyncSessionLocal() as db:
         task = await get_task_by_id(db, task_id)
         if not task:
-            await message.answer("❌ Задача не найдена.")
-            await show_main_menu(message, state)
+            await callback.answer("❌ Задача не найдена.", show_alert=True)
+            return
+
+        # Проверка, что нажал создатель
+        if task.created_by_id != callback.from_user.id:
+            await callback.answer("❌ Нет прав.", show_alert=True)
             return
 
         # Отправляем на доработку
@@ -189,16 +164,14 @@ async def process_rework_comment(message: types.Message, state: FSMContext):
         if assignee:
             await bot.send_message(
                 chat_id=assignee.telegram_chat_id,
-                text=(
-                    f"🔄 Задача '{task.title}' отправлена на доработку.\n\n"
-                    f"📝 Комментарий от создателя:\n{comment}\n\n"
-                    f"Исправьте замечания и отправьте снова."
-                )
+                text=f"🔄 Задача '{task.title}' отправлена на доработку. Исправьте замечания и отправьте снова."
             )
 
-    # Очищаем состояние и показываем меню\
-    await MessageManager.send_and_delete(message,"✅ Задача отправлена на доработку с комментарием.", delay=3)
-    await show_main_menu(message, state)
+        await callback.message.edit_text(
+            callback.message.text + "\n\n🔄 Задача отправлена на доработку.",
+            reply_markup=None
+        )
+        await callback.answer("🔄 Задача отправлена на доработку!")
 
 
 @router.callback_query(lambda c: c.data.startswith("delete_task_"))
