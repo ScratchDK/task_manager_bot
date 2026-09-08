@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -8,6 +8,19 @@ from app.models.task import Task
 from app.models.user import User
 
 from sqlalchemy import func, desc
+
+
+async def get_task_with_assignee(db: AsyncSession, task_id: int) -> Task | None:
+    query = (
+        select(Task)
+        .where(Task.id == task_id)
+        .options(
+            selectinload(Task.assignee),
+            selectinload(Task.created_by)
+        )
+    )
+    result = await db.execute(query)
+    return result.scalar_one_or_none()
 
 
 async def get_frequent_assignees(db: AsyncSession, user_id: int, limit: int = 3) -> list[User]:
@@ -90,7 +103,12 @@ async def get_user_tasks(db: AsyncSession, user: User, limit: int = 10):
     """Получает последние задачи пользователя."""
     query = (
         select(Task)
-        .where(Task.created_by_id == user.id)
+        .where(
+            or_(
+                Task.created_by_id == user.id,
+                Task.assignee_id == user.id
+            )
+        )
         .order_by(Task.created_at.desc())
         .limit(limit)
     )
@@ -100,6 +118,6 @@ async def get_user_tasks(db: AsyncSession, user: User, limit: int = 10):
 
 async def get_task_by_id(db: AsyncSession, task_id: int) -> Task | None:
     """Получает задачу по ID."""
-    query = select(Task).where(Task.id == task_id)
+    query = select(Task).where(Task.id == task_id).options(selectinload(Task.assignee))  # Жадная загрузка
     result = await db.execute(query)
     return result.scalar_one_or_none()

@@ -9,7 +9,7 @@ from app.bot.utils.message_manager import MessageManager
 from app.core.database import AsyncSessionLocal
 from app.models import User
 from app.models.task import TaskStatusEnum
-from app.services.task_service import get_task_by_id, delete_task
+from app.services.task_service import get_task_by_id, delete_task, get_task_with_assignee
 from app.services.user_service import get_user_by_chat_id_or_username
 from app.bot.dialogs.states import CreateTaskStates, ReworkStates
 from app.bot.dialogs.crud_task import finalize_task_creation
@@ -285,7 +285,8 @@ async def start_copy_message(callback: types.CallbackQuery, state: FSMContext):
     task_id = data.get("task_id")
 
     async with AsyncSessionLocal() as db:
-        task = await get_task_by_id(db, task_id)
+        task = await get_task_with_assignee(db, task_id)
+
         if not task:
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
@@ -306,7 +307,7 @@ async def copy_message_handler(callback: types.CallbackQuery, state: FSMContext)
     task_id = int(callback.data.split("_")[-1])
 
     async with AsyncSessionLocal() as db:
-        task = await get_task_by_id(db, task_id)
+        task = await get_task_with_assignee(db, task_id)
         if not task:
             await callback.answer("❌ Задача не найдена.", show_alert=True)
             return
@@ -318,12 +319,12 @@ async def copy_message_handler(callback: types.CallbackQuery, state: FSMContext)
             f"📄 Описание: {task.description or 'Без описания'}\n"
             f"🚨 Приоритет: {task.priority}\n"
             f"📅 Срок: {task.due_date.strftime('%d.%m.%Y') if task.due_date else 'не установлен'}\n\n"
-            f"Запусти бота, чтобы принять задачу: https://t.me/{bot_username}?start=task_{task.id}"
+            f"Запусти бота, чтобы принять задачу: https://t.me/{bot_username}?start=task_{task.id}\n"
             f"Либо проигнорируй данное сообщение."
         )
 
-        await callback.answer(
-            f"📋 Текст скопирован!\n\n{copy_text}",
-            show_alert=True,  # Показывает текст во всплывающем окне
-            cache_time=60
-        )
+        # Короткое уведомление
+        await callback.answer("📋 Текст скопирован!", show_alert=True, cache_time=60)
+
+        # Полный текст в чат
+        await callback.message.answer(f"📋 Скопируйте текст ниже:\n\n```\n{copy_text}\n```", parse_mode="Markdown")

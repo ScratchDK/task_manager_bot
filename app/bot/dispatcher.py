@@ -5,6 +5,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from app.core.config import settings
 
+# TODO: И в main тоже. Исправить, удалить ненужное или слить вместе!!!
 # Инициализация бота
 bot = Bot(
     token=settings.BOT_TOKEN.get_secret_value(),
