@@ -1,8 +1,7 @@
-import asyncio
 from datetime import datetime, timedelta
 
-from aiogram import Router, types, F
-from aiogram.filters import Command, StateFilter
+from aiogram import Router, types
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.types import (InlineKeyboardButton, InlineKeyboardMarkup,
                            ReplyKeyboardRemove)
@@ -17,13 +16,16 @@ from app.bot.dispatcher import bot
 from app.bot.utils.message_manager import MessageManager
 from app.core.database import AsyncSessionLocal
 from app.services.category_service import get_user_cats
-from app.services.task_service import (create_task, delete_task,
-                                       get_task_by_id, get_user_tasks, get_frequent_assignees)
+from app.services.task_service import (create_task, delete_task,get_user_tasks, get_frequent_assignees)
 from app.services.user_service import get_user_by_chat_id_or_username
 from app.bot.utils.user_manager import get_user_or_ask_start
 
 from .states import CreateTaskStates
+from ...models import User
 from ...models.task import TaskStatusEnum
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = Router()
 
@@ -248,14 +250,20 @@ async def process_assignee_input(message: types.Message, state: FSMContext):
             user = await get_user_by_chat_id_or_username(db, username=text)
 
         if not user:
-            await MessageManager.add_and_send(state, message,
-                "⚠️ Пользователь не найден. Проверьте username или ID и попробуйте снова.\n"
-                "Или отправьте '-' для назначения на себя."
+            # Создаем не активного пользователя автоматически
+            user = User(
+                telegram_chat_id=text,  # ID
+                username=None,
+                first_name=None,
+                is_active=False,  # Не активен
             )
-            await MessageManager.add_message(state, message)
-            return
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
 
-        # Сохраняем найденного пользователя в состояние
+            logger.info(f"Создан новый пользователь с ID {text} (не активен)")
+
+        # Сохраняем найденного/созданного пользователя в состояние
         await state.update_data(
             assignee_candidate_id=user.id,
             assignee_candidate_name=user.username or user.first_name or str(user.telegram_chat_id)
@@ -300,7 +308,7 @@ async def finalize_task_creation(message: types.Message, state: FSMContext):
         )
 
         # Формируем ответ
-        priority_value = task.priority.value
+        priority_value = task.priority.value if hasattr(task.priority, 'value') else task.priority
         priority_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(priority_value, "🟡")
         due_date_str = task.due_date.strftime("%d.%m.%Y") if task.due_date else "не установлена"
 
@@ -358,7 +366,6 @@ async def finalize_task_creation(message: types.Message, state: FSMContext):
         f"🆔 ID: {task.id}",
         reply_markup=get_return_keyboard()
     )
-    await state.clear()
 
 
 # --- Удаление задачи /delete_task ---

@@ -33,6 +33,7 @@ class Task(Base):
     due_date = Column(DateTime, nullable=True)  # Срок выполнения
     priority = Column(SQLEnum(PriorityEnum), default=PriorityEnum.medium)
     status = Column(SQLEnum(TaskStatusEnum), default=TaskStatusEnum.pending)
+    notification_attempts = Column(Integer, default=0)
 
     # Флаг, что задача отменена из-за не активности исполнителя
     cancelled_by_inactivity = Column(Boolean, default=False)

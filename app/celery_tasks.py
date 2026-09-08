@@ -80,54 +80,64 @@ def check_inactive_assignees():
 
             if assignee.is_active:
                 # Исполнитель активирован - отправляем уведомление
-                bot.send_message(
-                    chat_id=assignee.telegram_chat_id,
-                    text=(
-                        f"📩 Вам назначена задача!\n\n"
-                        f"📝 {task.title}\n"
-                        f"📄 {task.description or 'Без описания'}\n"
-                        f"🚨 Приоритет: {task.priority}\n"
-                        f"📅 Срок: {task.due_date.strftime('%d.%m.%Y') if task.due_date else 'не установлен'}\n"
-                        f"👤 Назначил задачу: {task.created_by.username or task.created_by.telegram_chat_id}"
+                try:
+                    bot.send_message(
+                        chat_id=assignee.telegram_chat_id,
+                        text=(
+                            f"📩 Вам назначена задача!\n\n"
+                            f"📝 {task.title}\n"
+                            f"📄 {task.description or 'Без описания'}\n"
+                            f"🚨 Приоритет: {task.priority}\n"
+                            f"📅 Срок: {task.due_date.strftime('%d.%m.%Y') if task.due_date else 'не установлен'}\n"
+                            f"👤 Назначил задачу: {task.created_by.username or task.created_by.telegram_chat_id}"
+                        )
                     )
-                )
-                task.last_notification_sent = datetime.now()
-                task.notification_attempts += 1
-                db.commit()
+                    db.commit()
+                except Exception as e:
+                    logger.error(f"Не удалось отправить сообщение пользователю {assignee.telegram_chat_id}: {e}")
+
             else:
                 days_passed = (datetime.now() - task.created_at).days
 
                 if days_passed >= 3:
                     task.cancelled_by_inactivity = True
                     task.status = TaskStatusEnum.cancelled
+                    task.completed_at = datetime.now()
                     db.commit()
 
                     creator = db.get(User, task.created_by_id)
                     if creator:
-                        bot.send_message(
-                            chat_id=creator.telegram_chat_id,
-                            text=(
-                                f"❌ Задача отменена из-за не активности исполнителя.\n\n"
-                                f"📝 {task.title}\n"
-                                f"📅 Создана: {task.created_at.strftime('%d.%m.%Y')}\n"
-                                f"👤 Исполнитель: {assignee.username or assignee.first_name}\n\n"
-                                f"Вы можете назначить другого исполнителя."
+                        try:
+                            bot.send_message(
+                                chat_id=creator.telegram_chat_id,
+                                text=(
+                                    f"❌ Задача отменена из-за не активности исполнителя.\n\n"
+                                    f"📝 {task.title}\n"
+                                    f"📅 Создана: {task.created_at.strftime('%d.%m.%Y')}\n"
+                                    f"👤 Исполнитель: {assignee.username or assignee.first_name}\n\n"
+                                    f"Вы можете назначить другого исполнителя."
+                                )
                             )
-                        )
+                        except Exception as e:
+                            logger.error(f"Не удалось отправить сообщение пользователю {creator.telegram_chat_id}: {e}")
                 else:
                     if task.notification_attempts % 24 == 0:
                         creator = db.get(User, task.created_by_id)
                         if creator:
-                            bot.send_message(
-                                chat_id=creator.telegram_chat_id,
-                                text=(
-                                    f"⚠️ Напоминание: исполнитель @{assignee.username or assignee.first_name} "
-                                    f"всё ещё не активировал бота.\n\n"
-                                    f"📝 {task.title}\n"
-                                    f"📅 Создана: {task.created_at.strftime('%d.%m.%Y')}\n\n"
-                                    f"Если исполнитель не активирует бота в течение 3 дней, задача будет отменена."
+                            try:
+                                bot.send_message(
+                                    chat_id=creator.telegram_chat_id,
+                                    text=(
+                                        f"⚠️ Напоминание: исполнитель @{assignee.username or assignee.first_name} "
+                                        f"всё ещё не активировал бота.\n\n"
+                                        f"📝 {task.title}\n"
+                                        f"📅 Создана: {task.created_at.strftime('%d.%m.%Y')}\n\n"
+                                        f"Если исполнитель не активирует бота в течение 3 дней, задача будет отменена."
+                                    )
                                 )
-                            )
+                            except Exception as e:
+                                logger.error(
+                                    f"Не удалось отправить сообщение пользователю {creator.telegram_chat_id}: {e}")
 
                     task.notification_attempts += 1
                     db.commit()
@@ -163,10 +173,13 @@ def check_upcoming_deadlines():
             if assignee.id != task.created_by_id:
                 text += f"\n👤 Назначил задачу: {creator_name}"
 
-            bot.send_message(
-                chat_id=assignee.telegram_chat_id,
-                text=text
-            )
+            try:
+                bot.send_message(
+                    chat_id=assignee.telegram_chat_id,
+                    text=text
+                )
+            except Exception as e:
+                logger.error(f"Не удалось отправить сообщение пользователю {assignee.telegram_chat_id}: {e}")
 
         logger.info(f"Уведомления о скором дедлайне отправлены для {len(tasks)} задач")
 
