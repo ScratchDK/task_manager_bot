@@ -10,9 +10,10 @@ from aiogram.fsm.storage.redis import RedisStorage
 from fastapi import FastAPI
 
 from app.bot import menu
-from app.bot.dialogs import crud_cat, crud_task, callbacks
+from app.bot.dialogs import crud_cat, crud_task, task_callbacks, comment_processing, copy_message, task_pagination
 from app.bot.handlers import start
 from app.core.config import settings
+from app.bot.middlewares.db import DbSessionMiddleware
 
 # Глобальные переменные для хранения клиента и хранилища (Для дальнейшего использования в других задачах)
 redis_client = None
@@ -33,13 +34,23 @@ async def lifespan(app: FastAPI):
     )
     dp = Dispatcher(storage=storage)  # Основной мозг бота, хранятся данные диалога
 
+    # TODO: До подключения роутов?!!!
+    # 2.1 Регистрируем middleware для ВСЕХ типов апдейтов
+    dp.message.middleware(DbSessionMiddleware())
+    dp.callback_query.middleware(DbSessionMiddleware())
+
     # 3. Подключаем хендлеры, диалоги и т.д.
     # Важен порядок обработчиков!!!
     dp.include_router(start.router)
     dp.include_router(crud_task.router)
     dp.include_router(crud_cat.router)
 
-    dp.include_router(callbacks.router)  # TODO: Могут быть конфликты? 👇
+    dp.include_router(task_callbacks.router)  # TODO: Могут быть конфликты? 👇
+
+    dp.include_router(task_pagination.router)
+
+    dp.include_router(comment_processing.router)  # Новый
+    dp.include_router(copy_message.router)  # Новый
 
     dp.include_router(menu.router)       # TODO: Могут быть конфликты? 👆
 

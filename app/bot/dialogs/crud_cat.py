@@ -1,12 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import ReplyKeyboardRemove
 
 from app.bot.dialogs.keyboards import get_return_keyboard
 from app.bot.dialogs.states import CategoryStates
 from app.bot.utils.message_manager import MessageManager
-from app.core.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.services.category_service import *
 from app.services.user_service import get_user_by_chat_id_or_username
 
@@ -15,16 +14,15 @@ router = Router()
 
 # --- Просмотр категорий /categories ---
 @router.message(Command("categories"))
-async def list_categories(message: types.Message, state: FSMContext):
+async def list_categories(message: types.Message, state: FSMContext, db: AsyncSession,):
     await MessageManager.delete_before_new_dialog(message, state)
 
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            await MessageManager.add_and_send(state, message, "❌ Пользователь не найден. Используйте /start")
-            return
+    user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+    if not user:
+        await MessageManager.add_and_send(state, message, "❌ Пользователь не найден. Используйте /start")
+        return
 
-        categories = await get_user_cats(db, user.id)
+    categories = await get_user_cats(db, user.id)
 
     if not categories:
         await MessageManager.add_and_send(state, message,
@@ -54,7 +52,7 @@ async def start_create_category(message: types.Message, state: FSMContext):
 
 
 @router.message(CategoryStates.waiting_for_name)
-async def process_category_name(message: types.Message, state: FSMContext):
+async def process_category_name(message: types.Message, state: FSMContext, db: AsyncSession,):
     await MessageManager.add_message(state, message)
 
     name = message.text.strip()
@@ -62,13 +60,12 @@ async def process_category_name(message: types.Message, state: FSMContext):
         await MessageManager.add_and_send(state, message,"⚠️ Название не может быть пустым. Попробуйте снова:")
         return
 
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            await MessageManager.add_and_send(state, message,"❌ Используйте /start")
-            return
+    user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+    if not user:
+        await MessageManager.add_and_send(state, message,"❌ Используйте /start")
+        return
 
-        category = await create_cat(db, user, name)
+    category = await create_cat(db, user, name)
 
     await MessageManager.add_and_send(
         state, message,
@@ -90,7 +87,7 @@ async def start_edit_category(message: types.Message, state: FSMContext):
 
 
 @router.message(CategoryStates.waiting_for_edit_id)
-async def process_edit_id(message: types.Message, state: FSMContext):
+async def process_edit_id(message: types.Message, state: FSMContext, db: AsyncSession,):
     await MessageManager.add_message(state, message)
     try:
         category_id = int(message.text.strip())
@@ -99,23 +96,22 @@ async def process_edit_id(message: types.Message, state: FSMContext):
         return
 
     # Проверяем, существует ли категория
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            await message.answer("❌ Используйте /start")
-            await state.clear()
-            return
+    user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+    if not user:
+        await message.answer("❌ Используйте /start")
+        await state.clear()
+        return
 
-        category = await get_cat_by_id(db, category_id, user.id)
-        if not category:
-            await MessageManager.add_and_send(state, message,
-                f"❌ Категория с ID {category_id} не найдена или у вас нет прав.\n"
-                "Попробуйте снова:"
-            )
-            return
+    category = await get_cat_by_id(db, category_id, user.id)
+    if not category:
+        await MessageManager.add_and_send(state, message,
+            f"❌ Категория с ID {category_id} не найдена или у вас нет прав.\n"
+            "Попробуйте снова:"
+        )
+        return
 
-        # Сохраняем ID в состояние
-        await state.update_data(edit_category_id=category_id)
+    # Сохраняем ID в состояние
+    await state.update_data(edit_category_id=category_id)
 
     await state.set_state(CategoryStates.waiting_for_edit_name)
     await MessageManager.add_and_send(state, message,
@@ -124,7 +120,7 @@ async def process_edit_id(message: types.Message, state: FSMContext):
 
 
 @router.message(CategoryStates.waiting_for_edit_name)
-async def process_edit_name(message: types.Message, state: FSMContext):
+async def process_edit_name(message: types.Message, state: FSMContext, db: AsyncSession,):
     await MessageManager.add_message(state, message)
 
     new_name = message.text.strip()
@@ -135,18 +131,17 @@ async def process_edit_name(message: types.Message, state: FSMContext):
     data = await state.get_data()
     category_id = data.get("edit_category_id")
 
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            await MessageManager.add_and_send(state, message,"❌ Используйте /start")
-            return
+    user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+    if not user:
+        await MessageManager.add_and_send(state, message,"❌ Используйте /start")
+        return
 
-        category = await get_cat_by_id(db, category_id, user.id)
-        if not category:
-            await MessageManager.add_and_send(state, message,f"❌ Категория с ID {category_id} не найдена.")
-            return
+    category = await get_cat_by_id(db, category_id, user.id)
+    if not category:
+        await MessageManager.add_and_send(state, message,f"❌ Категория с ID {category_id} не найдена.")
+        return
 
-        updated = await update_cat(db, category, new_name)
+    updated = await update_cat(db, category, new_name)
 
     await MessageManager.add_and_send(state, message,
         f"✅ Категория обновлена:\n"
@@ -168,7 +163,7 @@ async def start_delete_category(message: types.Message, state: FSMContext):
 
 
 @router.message(CategoryStates.waiting_for_delete_id)
-async def process_delete_id(message: types.Message, state: FSMContext):
+async def process_delete_id(message: types.Message, state: FSMContext, db: AsyncSession,):
     await MessageManager.add_message(state, message)
     try:
         category_id = int(message.text.strip())
@@ -176,21 +171,20 @@ async def process_delete_id(message: types.Message, state: FSMContext):
         await MessageManager.add_and_send(state, message,"❌ ID должен быть числом. Попробуйте снова:")
         return
 
-    async with AsyncSessionLocal() as db:
-        user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
-        if not user:
-            await MessageManager.add_and_send(state, message,"❌ Используйте /start")
-            return
+    user = await get_user_by_chat_id_or_username(db, str(message.chat.id))
+    if not user:
+        await MessageManager.add_and_send(state, message,"❌ Используйте /start")
+        return
 
-        category = await get_cat_by_id(db, category_id, user.id)
-        if not category:
-            await MessageManager.add_and_send(state, message,
-                f"❌ Категория с ID {category_id} не найдена или у вас нет прав.\n"
-                "Попробуйте снова:"
-            )
-            return
+    category = await get_cat_by_id(db, category_id, user.id)
+    if not category:
+        await MessageManager.add_and_send(state, message,
+            f"❌ Категория с ID {category_id} не найдена или у вас нет прав.\n"
+            "Попробуйте снова:"
+        )
+        return
+    await delete_cat(db, category)
 
-        await delete_cat(db, category)
     await MessageManager.add_and_send(state, message,
               f"🗑️ Категория с ID {category_id} удалена.",
               reply_markup=get_return_keyboard()
