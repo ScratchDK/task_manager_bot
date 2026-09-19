@@ -12,7 +12,7 @@ class CreateTaskStates(StatesGroup):
     waiting_for_copy_message = State()  # Исполнитель не активен, копируем сообщение для оправки через владельца задачи
 
 
-class ReworkStates(StatesGroup):
+class CommentStates(StatesGroup):
     waiting_for_comment = State()
 
 
