@@ -74,3 +74,24 @@ class MessageManager:
         await message.delete()  # Удаляем команду например /categories
         await MessageManager.clear_all_and_state(message, state)  # Удаляем все старые сообщения из чата
         await state.clear()  # Очищаем состояние
+
+    @staticmethod
+    async def clear_messages(target: Message, state: FSMContext):
+        """
+        Удаляет все сообщения из state, но НЕ очищает само состояние.
+        Используется для пагинации, когда нужно сохранить данные.
+        """
+        data = await state.get_data()
+        messages = data.get("messages", [])
+
+        for msg_id in messages:
+            try:
+                await target.bot.delete_message(
+                    chat_id=target.chat.id,
+                    message_id=msg_id
+                )
+            except Exception:
+                pass
+
+        # Очищаем только список сообщений, не трогая остальное
+        await state.update_data(messages=[])
