@@ -4,6 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from app.core.database import Base
 from app.models import User, Task, Category
+from httpx import ASGITransport, AsyncClient
+from app.main import app
+from app.dependencies import get_db
+from sqlalchemy.pool import StaticPool
 
 
 @pytest_asyncio.fixture
@@ -11,6 +15,8 @@ async def test_engine():
     engine = create_async_engine(
         "sqlite+aiosqlite:///:memory:",  # БД в оперативной памяти
         echo=False,                          # Не выводим SQL в консоль
+        connect_args={"check_same_thread": False},  # Для SQLite
+        poolclass=StaticPool,  # ОДНО соединение для всех
     )
 
     # Создаём все таблицы на основе моделей
@@ -34,6 +40,26 @@ async def db_session(test_engine):
     async with async_session() as session:
         yield session  # Отдаём сессию тесту
         # После теста сессия закроется автоматически
+
+
+@pytest_asyncio.fixture
+async def test_client(db_session):
+    """HTTP-клиент с подменённой БД."""
+
+    async def override_get_db():
+        yield db_session
+
+    # Когда FastAPI запросит get_db, отдадим override_get_db
+    app.dependency_overrides[get_db] = override_get_db
+
+    # ASGITransport - это "транспорт" для httpx, который вызывает ASGI-приложение
+    # (FastAPI - это ASGI-приложение) НАПРЯМУЮ, без сети и без uvicorn.
+    transport = ASGITransport(app=app)
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
+
+    app.dependency_overrides.clear()
 
 
 @pytest_asyncio.fixture

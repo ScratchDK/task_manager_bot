@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from app.core.celery import celery_app
+from app.api.v1 import api_router
 
 import redis.asyncio as redis
 from aiogram import Bot, Dispatcher
@@ -71,6 +72,9 @@ app = FastAPI(
     title="Task Manager Bot API",
     lifespan=lifespan
 )
+
+# Подключаем API
+app.include_router(api_router)
 
 @app.get("/")
 async def root():
