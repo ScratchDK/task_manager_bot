@@ -57,6 +57,7 @@ async def lifespan(app: FastAPI):
 
     # 4. Запускаем бота
     asyncio.create_task(dp.start_polling(bot))
+    # TODO: polling постоянно спрашиваем бота есть ли сообщения, для продакшена поменять на webhook!
     # dp.start_polling(bot) - асинхронная корутина запускающая бесконечный цикл
     # asyncio.create_task() - добавляет корутину в event loop
 
