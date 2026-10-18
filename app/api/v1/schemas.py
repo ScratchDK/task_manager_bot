@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 
 
 class TaskBase(BaseModel):
@@ -59,3 +59,36 @@ class UserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# --- Auth ---
+
+class TelegramLoginRequest(BaseModel):
+    """Логин через Telegram (по chat_id)."""
+    telegram_chat_id: str
+
+
+class EmailRegisterRequest(BaseModel):
+    """Регистрация через email + пароль."""
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    telegram_chat_id: Optional[str] = None
+
+
+class EmailLoginRequest(BaseModel):
+    """Логин через email + пароль."""
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    """Ответ с токенами."""
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class RefreshRequest(BaseModel):
+    """Запрос на обновление токена."""
+    refresh_token: str

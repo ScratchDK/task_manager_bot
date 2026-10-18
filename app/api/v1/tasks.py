@@ -3,8 +3,11 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.celery_tasks import notify_assignee
+
 from app.api.v1.schemas import TaskCreate, TaskResponse, TaskUpdate
-from app.dependencies import get_db
+from app.dependencies import get_db, get_current_user
+from app.models import User
 from app.models.task import Task, TaskStatusEnum
 from app.services.task_service import (
     create_task,
@@ -14,42 +17,57 @@ from app.services.task_service import (
 )
 from app.services.user_service import get_user_by_chat_id_or_username
 
-router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
+router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
-@router.get("/user/{telegram_chat_id}", response_model=List[TaskResponse])
-async def list_user_tasks(telegram_chat_id: str, db: AsyncSession = Depends(get_db),):
-    """Получить все задачи пользователя/"""
-    user = await get_user_by_chat_id_or_username(db, chat_id=telegram_chat_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+# @router.get("/user/{telegram_chat_id}", response_model=List[TaskResponse])
+# async def list_user_tasks(telegram_chat_id: str, db: AsyncSession = Depends(get_db),):
+#     """Получить все задачи пользователя/"""
+#     user = await get_user_by_chat_id_or_username(db, chat_id=telegram_chat_id)
+#     if not user:
+#         raise HTTPException(status_code=404, detail="User not found")
+#
+#     tasks = await get_user_tasks(db, user)
+#     return tasks
 
-    tasks = await get_user_tasks(db, user)
+
+@router.get("/my", response_model=List[TaskResponse])
+async def get_my_tasks(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Задачи текущего пользователя (из токена)."""
+    tasks = await get_user_tasks(db, current_user)
     return tasks
 
 
 @router.get("/{task_id}", response_model=TaskResponse)
-async def get_task(task_id: int, db: AsyncSession = Depends(get_db),):
+async def get_task(task_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),):
     """Получить задачу по ID."""
     task = await get_task_by_id(db, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    # Только создатель или исполнитель
+    if task.created_by_id != current_user.id and task.assignee_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     return task
 
 
 @router.post("/", response_model=TaskResponse, status_code=status.HTTP_201_CREATED)
-async def create_new_task(task_data: TaskCreate, telegram_chat_id: str, db: AsyncSession = Depends(get_db),):
+async def create_new_task(task_data: TaskCreate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),):
     """
     Создать новую задачу.
     Query parameter `telegram_chat_id` — кто создаёт задачу.
     """
-    user = await get_user_by_chat_id_or_username(db, chat_id=telegram_chat_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+    # user = await get_user_by_chat_id_or_username(db, chat_id=telegram_chat_id)
+    # if not user:
+    #     raise HTTPException(status_code=404, detail="User not found")
 
     task = await create_task(
         db=db,
-        user=user,
+        user=current_user,
         title=task_data.title,
         description=task_data.description,
         due_date=task_data.due_date,
@@ -57,11 +75,19 @@ async def create_new_task(task_data: TaskCreate, telegram_chat_id: str, db: Asyn
         category_id=task_data.category_id,
         assignee_id=task_data.assignee_id,
     )
+
+    # Уведомляем исполнителя через tg бота
+    if task.assignee_id != task.created_by_id:
+        notify_assignee.delay(task.id)  # Celery-задача
+
     return task
 
 
 @router.patch("/{task_id}", response_model=TaskResponse)
-async def update_task(task_id: int, task_data: TaskUpdate, db: AsyncSession = Depends(get_db),):
+async def update_task(
+        task_id: int, task_data: TaskUpdate,
+        current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),
+):
     """
     Обновить задачу.
     Можно менять: title, description, due_date, priority, status, category_id, assignee_id.
@@ -69,6 +95,9 @@ async def update_task(task_id: int, task_data: TaskUpdate, db: AsyncSession = De
     task = await get_task_by_id(db, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
+
+    if task.created_by_id != current_user.id and task.assignee_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
 
     # Обновляем только переданные поля
     update_data = task_data.model_dump(exclude_unset=True)
@@ -87,16 +116,14 @@ async def update_task(task_id: int, task_data: TaskUpdate, db: AsyncSession = De
 
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task_api(task_id: int, telegram_chat_id: str, db: AsyncSession = Depends(get_db),):
+async def delete_task_api(
+        task_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db),):
     """
     Удалить задачу.
     Только создатель может удалить задачу.
     """
-    user = await get_user_by_chat_id_or_username(db, chat_id=telegram_chat_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
 
-    success = await delete_task(db, task_id, user)
+    success = await delete_task(db, task_id, current_user)
     if not success:
         raise HTTPException(status_code=403, detail="Cannot delete task")
 

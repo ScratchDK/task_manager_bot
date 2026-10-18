@@ -5,7 +5,7 @@ from app.api.v1.schemas import UserResponse
 from app.dependencies import get_db
 from app.services.user_service import get_user_by_chat_id_or_username
 
-router = APIRouter(prefix="/api/v1/users", tags=["users"])
+router = APIRouter(prefix="/users", tags=["users"])
 
 
 @router.get("/{telegram_chat_id}", response_model=UserResponse)

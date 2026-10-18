@@ -33,6 +33,12 @@ class Settings(BaseSettings):
     CELERY_TIMEZONE: str = "UTC"
     CELERY_ENABLE_UTC: bool = True
 
+    # Webhook
+    USE_WEBHOOK: bool = False  # По умолчанию polling (для разработки)
+    WEBHOOK_URL: str = ""  # Например, https://abc123.ngrok.io
+    WEBHOOK_PATH: str = "/webhook"  # Путь, по которому Telegram шлёт апдейты
+    WEBHOOK_SECRET: SecretStr = SecretStr("change-me-in-production")
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
