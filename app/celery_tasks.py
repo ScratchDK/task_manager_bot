@@ -183,6 +183,7 @@ def check_upcoming_deadlines():
 
         logger.info(f"Уведомления о скором дедлайне отправлены для {len(tasks)} задач")
 
+
 # TODO: На будущее для очистки старых задач и отдельного отображения архивных
 @shared_task
 def archive_old_tasks():
@@ -196,3 +197,15 @@ def archive_old_tasks():
         for task in old_tasks:
             task.status = TaskStatusEnum.archived
             db.commit()
+
+
+@shared_task
+def notify_assignee(task_id: int):
+    """Уведомляет исполнителя о новой задаче."""
+    with SyncSessionLocal() as db:
+        task = db.get(Task, task_id)
+        if task and task.assignee:
+            bot.send_message(
+                chat_id=task.assignee.telegram_chat_id,
+                text=f"📩 Вам назначена задача: {task.title}",
+            )

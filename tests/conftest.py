@@ -76,3 +76,18 @@ async def test_user(db_session):
     await db_session.refresh(user)
 
     return user
+
+
+@pytest_asyncio.fixture
+async def test_user_with_email(db_session):
+    from app.core.security import hash_password
+    user = User(
+        telegram_chat_id="email_test123",
+        email="test@example.com",
+        password_hash=hash_password("test12345"),
+        is_active=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user

@@ -37,6 +37,12 @@
 - ✅ Получение информации о пользователях
 - ✅ Swagger UI (`/docs`)
 
+### Авторизация
+- ✅ POST /api/v1/auth/register
+- ✅ POST /api/v1/auth/login
+- ✅ POST /api/v1/auth/refresh
+- ✅JWT Bearer
+
 ### Качество кода
 - ✅ Middleware для управления сессиями БД в aiogram
 - ✅ Dependency Injection (`db: AsyncSession` в хендлерах)
