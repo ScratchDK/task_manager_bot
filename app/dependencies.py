@@ -16,7 +16,7 @@ security = HTTPBearer()
 # Aiogram не использует Depends, в боте вариант через middleware
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency для получения сессии БД."""
-    async with AsyncSessionLocal() as db:
+    async with AsyncSessionLocal() as db:  # Создается новый экземпляр сессии
         yield db
 
 

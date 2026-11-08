@@ -8,6 +8,10 @@ from app.models import User
 # Inline-кнопка = callback-запрос боту
 
 # --- Кнопки ---
+def add_translate_button(task_id: int):
+    """Возвращает инлайн-кнопку перевода задачи."""
+    return [InlineKeyboardButton(text="🌐 Перевести", callback_data=f"translate_task_{task_id}",)]
+
 def add_return_button():
     """Возвращает инлайн-кнопку возврата в главное меню."""
     return [InlineKeyboardButton(text="🏠 В главное меню", callback_data="return_to_main_menu")]
@@ -23,6 +27,27 @@ def add_return_reply_button():
 #     """Клавиатура с кнопкой выбора контакта."""
 #     button = KeyboardButton(text="👤 Выбрать из контактов", request_contact=True)
 #     return ReplyKeyboardMarkup(keyboard=[[button]], resize_keyboard=True, one_time_keyboard=True)
+
+def get_translate_keyboard(task_id: int):
+    """Клавиатура с кнопкой перевода."""
+    button = [InlineKeyboardButton(text="🌐 Перевести", callback_data=f"translate_task_{task_id}",)]
+    return InlineKeyboardMarkup(inline_keyboard=[button])
+
+
+def get_assignee_confirm_task_keyboard(task_id: int, need_translate: bool = False):
+    """Клавиатура с кнопками принятия задачи, для исполнителя."""
+    buttons = [
+        [
+            InlineKeyboardButton(text="✅ Принять", callback_data=f"accept_task_{task_id}"),
+            InlineKeyboardButton(text="❌ Отказаться", callback_data=f"decline_task_{task_id}"),
+        ],
+    ]
+    if need_translate:
+        buttons.append(add_translate_button(task_id))
+
+    buttons.append(add_return_button())
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def get_return_keyboard():
@@ -85,13 +110,27 @@ def get_copy_or_menu_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-def get_copy_actions_keyboard(user_id: int, task_id: int):
+def get_copy_actions_keyboard(user_id: int|None, task_id: int, username: str = None):
     """Клавиатура для шага копирования: скопировать, написать, в меню."""
     buttons = [
         [InlineKeyboardButton(text="📋 Скопировать текст", callback_data=f"copy_message_{task_id}")],
-        [InlineKeyboardButton(text="👤 Написать исполнителю", url=f"tg://user?id={user_id}")],
-        add_return_button()
     ]
+
+    if username:
+        # Если есть username, используем https-ссылку
+        buttons.append([InlineKeyboardButton(
+            text="👤 Написать исполнителю",
+            url=f"https://t.me/{username}",
+        )])
+    elif user_id:
+        # Если username нет, пробуем tg:// (может сработать, если приватность позволяет)
+        # TODO: Проверить почему при одних и тех же вроде настройках то есть ошибки то нет!
+        buttons.append([InlineKeyboardButton(
+            text="👤 Написать исполнителю",
+            url=f"tg://user?id={user_id}",
+        )])
+
+    buttons.append(add_return_button())
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 

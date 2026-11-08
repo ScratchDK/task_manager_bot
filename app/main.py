@@ -1,6 +1,5 @@
 import asyncio
 from contextlib import asynccontextmanager
-from app.core.celery import celery_app
 from app.api.v1 import api_router
 
 import redis.asyncio as redis
@@ -8,15 +7,13 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.fsm.storage.redis import RedisStorage
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI
 
 from app.bot import menu
 from app.bot.dialogs import crud_cat, crud_task, task_callbacks, comment_processing, copy_message, task_pagination
 from app.bot.handlers import start
 from app.core.config import settings
 from app.bot.middlewares.db import DbSessionMiddleware
-
-from aiogram.types import Update
 
 # Глобальные переменные для хранения клиента и хранилища (Для дальнейшего использования в других задачах)
 redis_client = None
