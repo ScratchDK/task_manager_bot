@@ -20,7 +20,7 @@ async def create_cat(db: AsyncSession, user: User, name: str, ) -> Category:
 
     db.add(cat)
     await db.commit()
-    await db.refresh(cat)
+    await db.refresh(cat)  # В данном случае необязательно, так как id сразу будет актуальный и тянуть из БД не нужно. Но пусть пока будет.
     return cat
 
 

@@ -9,6 +9,9 @@ from app.core.database import Base
 class User(Base):
     __tablename__ = "users"  # Имя в БД
 
+    # Язык профиля пользователя в tg
+    language = Column(String(10), default="ru", nullable=False)
+
     id = Column(Integer, primary_key=True, index=True)
     telegram_chat_id = Column(String, unique=True, index=True, nullable=False)
     username = Column(String, nullable=True)

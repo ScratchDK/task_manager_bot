@@ -19,7 +19,7 @@ from app.core.database import AsyncSessionLocal
 
 class DbSessionMiddleware(BaseMiddleware):
     """
-    Создаёт AsyncSession для каждого апдейта и прокидывает в хендлер.
+    Создаёт AsyncSession для каждого апдейта (событие в tg) и прокидывает в хендлер.
 
     В хендлере сессия доступна как аргумент `db`:
         async def handler(message: Message, db: AsyncSession):

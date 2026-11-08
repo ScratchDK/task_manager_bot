@@ -159,3 +159,4 @@ cython_debug/
 .idea/
 documents/Документы/
 .env.docker
+PROJECT_OUTLINE.md
