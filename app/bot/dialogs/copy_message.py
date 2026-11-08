@@ -1,5 +1,6 @@
 from aiogram import Router, types
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.dispatcher import bot
@@ -26,10 +27,22 @@ async def start_copy_message(callback: types.CallbackQuery, state: FSMContext, d
     assignee = task.assignee
 
     # Редактируем предыдущее сообщение, показываем текст
-    await callback.message.edit_text(
-        f"Выберете вариант ниже для продолжения👇",
-        reply_markup=get_copy_actions_keyboard(assignee.telegram_chat_id, task.id)
-    )
+    try:
+        await callback.message.edit_text(
+            "Выберите вариант ниже для продолжения👇",
+            reply_markup=get_copy_actions_keyboard(assignee.telegram_chat_id, task.id, assignee.username,),)
+
+    # TODO: Проблема: при равных настройках у разных пользователей то есть, то нет ошибок. Выяснить почему!
+    except TelegramBadRequest as e:
+        if "BUTTON_USER_INVALID" in str(e):
+            # Если tg:// не сработал - показываем без кнопки "Написать"
+            await callback.message.edit_text(
+                f"Выберите вариант ниже для продолжения👇\n\n"
+                f"🆔 ID исполнителя: {assignee.telegram_chat_id}\n"
+                f"Скопируйте ID и напишите ему вручную.",
+                reply_markup=get_copy_actions_keyboard(user_id=None, task_id=task.id, username=None,))
+        else:
+            raise
     await callback.answer()
 
 

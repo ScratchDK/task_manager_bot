@@ -10,11 +10,11 @@ from app.bot.menu import show_main_menu
 from app.bot.utils.message_manager import MessageManager
 from app.models import User
 from app.models.task import TaskStatusEnum
-from app.services.task_service import get_task_by_id, delete_task
+from app.services.task_service import get_task_by_id, delete_task, get_task_with_assignee
 from app.services.user_service import get_user_by_chat_id_or_username
 from app.bot.dialogs.states import CreateTaskStates, CommentStates
 from app.bot.dialogs.crud_task import finalize_task_creation
-from app.bot.dialogs.keyboards import get_confirm_keyboard
+from app.bot.dialogs.keyboards import get_confirm_keyboard, get_return_keyboard
 
 router = Router()
 
@@ -89,13 +89,14 @@ async def complete_task(callback: types.CallbackQuery, state: FSMContext, db: As
 async def approve_task(callback: types.CallbackQuery, state: FSMContext, db: AsyncSession,):
     task_id = int(callback.data.split("_")[2])
 
-    task = await get_task_by_id(db, task_id)
+    # task = await get_task_by_id(db, task_id)  # Меняем на get_task_with_assignee чтобы жадно подгружать и использовать created_by
+    task = await get_task_with_assignee(db, task_id)
     if not task:
         await callback.answer("❌ Задача не найдена.", show_alert=True)
         return
 
     # Проверка, что нажал создатель
-    if task.created_by_id != callback.from_user.id:
+    if str(task.created_by.telegram_chat_id) != str(callback.from_user.id):
         await callback.answer("❌ Нет прав.", show_alert=True)
         return
 
@@ -209,3 +210,118 @@ async def assignee_fast_selected(callback: types.CallbackQuery, state: FSMContex
         reply_markup=get_confirm_keyboard(user.id)
     )
     await callback.answer()
+
+
+# --- Принятие задач другим пользователем ---
+@router.callback_query(lambda c: c.data.startswith("accept_task_"))
+async def accept_task(
+        callback: types.CallbackQuery,
+        state: FSMContext,
+        db: AsyncSession,
+):
+    task_id = int(callback.data.split("_")[2])
+
+    task = await get_task_by_id(db, task_id)
+    if not task:
+        await callback.answer("❌ Задача не найдена", show_alert=True)
+        return
+
+    user = await get_user_by_chat_id_or_username(db, chat_id=str(callback.from_user.id))
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+
+    task.status = TaskStatusEnum.in_progress
+    await db.commit()
+
+    # Уведомляем создателя
+    creator = await db.get(User, task.created_by_id)
+    if creator:
+        await bot.send_message(
+            chat_id=creator.telegram_chat_id,
+            text=(
+                f"✅ Исполнитель {user.username or user.first_name or str(user.telegram_chat_id)} принял задачу!\n\n"
+                f"📝 {task.title}\n"
+                f"🆔 ID: {task.id}\n\n"
+                f"Теперь можно отслеживать выполнение."
+            ),
+        )
+
+    # Редактируем сообщение + кнопка возврата
+    await callback.message.edit_text(
+        f"✅ Вы приняли задачу: {task.title}\n\n"
+        f"Используйте /my_tasks для управления.",
+        reply_markup=get_return_keyboard(),
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("decline_task_"))
+async def decline_task(
+        callback: types.CallbackQuery,
+        state: FSMContext,
+        db: AsyncSession,
+):
+    task_id = int(callback.data.split("_")[2])
+
+    task = await get_task_by_id(db, task_id)
+    if not task:
+        await callback.answer("❌ Задача не найдена", show_alert=True)
+        return
+
+    user = await get_user_by_chat_id_or_username(db, chat_id=str(callback.from_user.id))
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+
+    task.status = TaskStatusEnum.cancelled
+    task.completed_at = datetime.now()
+    await db.commit()
+
+    # Уведомляем создателя
+    creator = await db.get(User, task.created_by_id)
+    if creator:
+        await bot.send_message(
+            chat_id=creator.telegram_chat_id,
+            text=(
+                f"❌ Исполнитель {user.username or user.first_name or str(user.telegram_chat_id)} отказался от задачи\n\n"
+                f"📝 {task.title}\n"
+                f"🆔 ID: {task.id}\n\n"
+                f"Вы можете назначить другого исполнителя."
+            ),
+        )
+
+    # ✅ Редактируем сообщение + кнопка возврата
+    await callback.message.edit_text(
+        f"❌ Вы отказались от задачи: {task.title}",
+        reply_markup=get_return_keyboard(),
+    )
+
+
+# --- Перевод задачи ---
+@router.callback_query(lambda c: c.data.startswith("translate_task_"))
+async def translate_task(callback: types.CallbackQuery, state: FSMContext, db: AsyncSession,):
+    """Переводит задачу на язык указанный в профиле текущего пользователя."""
+    task_id = int(callback.data.split("_")[2])
+
+    task = await get_task_by_id(db, task_id)
+    if not task:
+        await callback.answer("❌ Задача не найдена", show_alert=True)
+        return
+
+    user = await get_user_by_chat_id_or_username(db, chat_id=str(callback.from_user.id))
+    if not user:
+        await callback.answer("❌ Пользователь не найден", show_alert=True)
+        return
+
+    from app.services.translation_service import translate_text
+
+    translated_title = await translate_text(task.title, target_lang=user.language)
+    translated_desc = await translate_text(task.description or "", target_lang=user.language,)
+
+    sent = await callback.message.answer(
+        f"🌐 Перевод задачи:\n\n"
+        f"📝 {translated_title}\n"
+        f"📄 {translated_desc or 'Без описания'}"
+    )
+    await MessageManager.add_message(state, sent)
+    await callback.answer("✅ Переведено")  # Сброс "часиков в тг"

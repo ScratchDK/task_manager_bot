@@ -22,6 +22,7 @@ async def get_or_create_user(db: AsyncSession, tg_data: dict) -> User:  # tg_dat
         username=tg_data.get("username"),
         first_name=tg_data.get("first_name"),
         last_name=tg_data.get("last_name"),
+        language=tg_data.get("language_code", "ru"),
     )
     db.add(user)  # Аналог save() из django, но INSERT еще не произошел
     await db.commit()  # Для атомарности, чтобы вся транзакция прошла (INSERT в БД (генерируется id))

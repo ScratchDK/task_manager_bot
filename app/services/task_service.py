@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 
 from sqlalchemy import select, or_
@@ -8,6 +9,10 @@ from app.models.task import Task
 from app.models.user import User
 
 from sqlalchemy import func, desc
+from langdetect import detect, DetectorFactory
+
+DetectorFactory.seed = 0  # для стабильности
+# TODO: Для получения одно и того же результата при переводе (Определение языка все равно может быть неверным?!, Потестить!)
 
 
 async def get_task_with_assignee(db: AsyncSession, task_id: int) -> Task | None:
@@ -54,6 +59,16 @@ async def get_frequent_assignees(db: AsyncSession, user_id: int, limit: int = 3)
 async def create_task(db: AsyncSession, user: User, title: str, description: str = None,
     due_date: datetime = None, priority: str = "medium", category_id: int = None, assignee_id: int = None,) -> Task:
     """Создает новую задачу."""
+
+    # Определяем язык текста задачи
+    text_for_detect = f"{title} {description or ''}".strip()
+
+    try:
+        # Поскольку langdetect синхронный, включить в async loop мы его не можем, для чего создаем отдельный поток
+        language = await asyncio.to_thread(detect, text_for_detect)
+    except Exception:
+        language = user.language or "ru"  # fallback
+
     task = Task(
         title=title,
         description=description,
@@ -62,6 +77,7 @@ async def create_task(db: AsyncSession, user: User, title: str, description: str
         category_id=category_id,
         created_by_id=user.id,
         assignee_id=assignee_id or user.id,  # Если не указан, исполнитель - создатель
+        language=language,
     )
     db.add(task)
     await db.commit()

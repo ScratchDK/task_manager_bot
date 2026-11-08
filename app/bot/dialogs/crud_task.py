@@ -13,7 +13,8 @@ from app.bot.dialogs.keyboards import (get_confirm_keyboard,
                                        get_priority_keyboard,
                                        get_return_keyboard,
                                        get_copy_or_menu_keyboard,
-                                       get_assignee_keyboard)
+                                       get_assignee_keyboard, get_translate_keyboard,
+                                       get_assignee_confirm_task_keyboard)
 from app.bot.dispatcher import bot
 from app.bot.utils.message_manager import MessageManager
 from app.services.category_service import get_user_cats
@@ -280,7 +281,7 @@ async def finalize_task_creation(message: types.Message, state: FSMContext, db: 
                 message,
                 f"👤 Данный пользователь: {task.assignee.username} (ID: {task.assignee.telegram_chat_id}),\n"
                 "не активировал свою учетную запись в task manager bot.\n"
-                "Вы может оправить ему уведомление, сформировать и скопировать его по кнопке ниже👇 или вернуться в меню",
+                "Вы можете оправить ему уведомление, сформировать и скопировать его по кнопке ниже👇 или вернуться в меню",
                 reply_markup=get_copy_or_menu_keyboard()
             )
             return
@@ -289,18 +290,28 @@ async def finalize_task_creation(message: types.Message, state: FSMContext, db: 
         # перенес логику в create_task чтобы не повторять код в дальнейшем
         assignee_display = task.assignee.username or task.assignee.first_name or str(task.assignee.telegram_chat_id)
 
+        text_for_assignee = (
+            f"📩 Вам назначена задача!\n\n"
+            f"📝 {task.title}\n"
+            f"📄 {task.description or 'Без описания'}\n"
+            f"🚨 Приоритет: {task.priority}\n"
+            f"📅 Срок: {task.due_date.strftime('%d.%m.%Y')}\n"
+            f"👤 Назначил задачу: {task.created_by.username or task.created_by.telegram_chat_id}"
+        )
+
         try:
-            await bot.send_message(
-                chat_id=task.assignee.telegram_chat_id,
-                text=(
-                    f"📩 Вам назначена задача!\n\n"
-                    f"📝 {task.title}\n"
-                    f"📄 {task.description or 'Без описания'}\n"
-                    f"🚨 Приоритет: {task.priority}\n"
-                    f"📅 Срок: {task.due_date.strftime('%d.%m.%Y')}\n"
-                    f"👤 Назначил задачу: {task.created_by.username or task.created_by.telegram_chat_id}"
+            if task.language != task.assignee.language:
+                await bot.send_message(
+                    chat_id=task.assignee.telegram_chat_id,
+                    text=text_for_assignee,
+                    reply_markup=get_assignee_confirm_task_keyboard(task.id, need_translate=True),
                 )
-            )
+            else:
+                await bot.send_message(
+                    chat_id=task.assignee.telegram_chat_id,
+                    text=text_for_assignee,
+                    reply_markup=get_assignee_confirm_task_keyboard(task.id,)
+                )
         except Exception as e:
             print(f"❌ Не удалось отправить уведомление исполнителю {task.assignee.telegram_chat_id}: {e}")
 
@@ -465,6 +476,15 @@ async def show_tasks_page(message: types.Message, state: FSMContext, db: AsyncSe
 
         # Кнопки для задачи
         buttons = []
+
+        # Кнопка перевода (если язык задачи не совпадает с профилем)
+        if task.language != user.language:
+            buttons.append(
+                InlineKeyboardButton(
+                    text="🌐 Перевести",
+                    callback_data=f"translate_task_{task.id}",
+                )
+            )
 
         if task.status not in (TaskStatusEnum.completed, TaskStatusEnum.cancelled, TaskStatusEnum.review):
             buttons.append(

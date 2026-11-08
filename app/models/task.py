@@ -27,6 +27,9 @@ class TaskStatusEnum(enum.Enum):
 class Task(Base):
     __tablename__ = "tasks"
 
+    # Для автоопределения языка задачи
+    language = Column(String(10), default="ru", nullable=False)
+
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
